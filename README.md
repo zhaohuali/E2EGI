@@ -1,4 +1,4 @@
-# E2EGI
+# E2EGI (updating)
 E2EGI: End-to-End Gradient Inversion in Federated Learning
 (Gradient Leakage in Federated Learning)
 
