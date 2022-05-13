@@ -3,10 +3,11 @@ import os
 import sys
 import logging
 
+import apex
 import torch
 import torchvision.models as models
 
-from kernels import simple_total_variation
+from kernels import simple_total_variation, BNForwardLossHook
 
 
 def save_args(args):
@@ -192,3 +193,28 @@ def get_target_state(x_true):
     x_norm_loss = \
         torch.norm(x_true.view(x_true.size(0), -1), p=2, dim=-1).mean()
     print(f'[Target] > [TV] {TV_diff:.4f} [input norm] {x_norm_loss:.4f}')
+
+
+def set_BN_regularization(bn_mean_list, bn_var_list, model, args):
+    bn_loss_layers = []
+    i_bn_layers = 0
+    for module in model.modules():
+        if isinstance(module, apex.parallel.SyncBatchNorm):
+            if bn_mean_list is not None and args.exact_bn:
+                mean = bn_mean_list[i_bn_layers].cuda(args.gpu)
+                var = bn_var_list[i_bn_layers].cuda(args.gpu)
+            else:
+                mean = module.running_mean.detach().clone()
+                var = module.running_var.detach().clone()
+            bn_loss_layers.append(
+                BNForwardLossHook(
+                    module,
+                    args.distributed,
+                    mean,
+                    var))
+            if i_bn_layers == 0:
+                print(f'set loss hook for \
+                    bn statistics,exact_bn [{args.exact_bn}]')
+            i_bn_layers += 1
+
+    return bn_loss_layers

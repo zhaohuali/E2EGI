@@ -1,9 +1,92 @@
 
 import os
 
+import torch
 from ray import tune
 from ray.tune.suggest.bohb import TuneBOHB
 from ray.tune.schedulers.hb_bohb import HyperBandForBOHB
+
+from .gradient_inversion import BaseGradientInversion
+
+
+class HSGradientInversion(BaseGradientInversion):
+
+    def __init__(self, target_gradient, model, dm, ds, args) -> None:
+        super().__init__(target_gradient, model, dm, ds, args)
+        self.min_t = args.min_t
+
+    def run(self, lr_start_end,
+            regularization, x_pseudo,
+            y_pseudo, epochs,
+            metric_dict,
+            bn_loss_layers=None, x_group=None,
+            state='update'):
+
+        '''
+        lr_start_end: tuple (lr_start, lr_end)
+        regularization: dict ('TV': value, .., )
+        '''
+
+        self.setup(regularization, bn_loss_layers, x_group)
+        x_true = metric_dict['x_true'].cpu()
+
+        x_pseudo = x_pseudo.detach().clone()
+        x_pseudo.requires_grad = True
+
+        if self.optim == 'Adam':
+            optimizer = torch.optim.Adam([x_pseudo], lr_start_end[0])
+
+        scheduler = self.get_lr_scheduler(optimizer, epochs, lr_start_end[1])
+
+        try:
+            for epoch in range(1, epochs+1):
+                closure = self.grads_inversion(x_pseudo, y_pseudo,
+                                               optimizer, state)
+                optimizer.step(closure)
+                scheduler.step()
+
+                with torch.no_grad():
+
+                    # add noise to x_pseudo
+                    if self.input_noise > 0:
+                        x_pseudo.data = self.add_noise(x_pseudo, optimizer)
+
+                    # boxing x_pseudo
+                    if self.input_boxed:
+                        x_pseudo.data = self.boxing_input(x_pseudo)
+
+                    if (epoch == 1
+                            and epoch % self.print_freq == 0
+                            and epoch == epochs):
+                        self.display_results(epoch, epochs)
+
+                    # superparameters search
+                    if epoch >= self.min_t:
+                        if self.min_grads_loss:
+                            loss = self.get_HP_loss(
+                                self.best_x_pseudo.cpu(), x_true)
+                        else:
+                            loss = self.get_HP_loss(x_pseudo.cpu(), x_true)
+                        tune.report(
+                            iterations=epoch,
+                            loss=loss
+                        )
+
+        except KeyboardInterrupt:
+            print('early stop.')
+
+        finally:
+            self.display_results(epoch, epochs)
+
+        if self.min_grads_loss:
+            return self.best_x_pseudo, self.best_loss_track
+        else:
+            return x_pseudo, self.loss_track
+
+    def get_HP_loss(self, x_pseudo, x_true):
+        image_diff = 0
+        image_diff += ((x_pseudo - x_true) ** 2).mean()
+        return image_diff.item()
 
 
 def set_superparameters(args, param_config):

@@ -16,9 +16,11 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 
 from config import save_args, update_args, build_history
-from config import load_checkpoint
+from config import load_checkpoint, set_BN_regularization
 from kernels import ray_tune_main, set_superparameters
-from metric import get_gir
+from kernels import init_x_pseudo, get_y_pseudo, reconstruction
+from metric import get_gir, save_results_with_metric
+from distributed import set_distributed, get_rank_samples
 
 __version__ = '0.1.0'
 
@@ -248,6 +250,48 @@ def main_worker(gpu, ngpus_per_node, args):
     if args.metric and args.GInfoR:
         GInfoR = get_gir(model, metric_dict, args.model_eval)
         print(f'GInfoR: \n{GInfoR}')
+
+    model = set_distributed(model, args)
+
+    bn_loss_layers = None
+    if args.BN > 0:
+        bn_loss_layers = set_BN_regularization(
+                            bn_mean_list,
+                            bn_var_list,
+                            model,
+                            args)
+
+    # initialize fake-samples
+    x_pseudo_list = init_x_pseudo(args)
+    y_pseudo = get_y_pseudo(args, metric_dict)
+    if args.distributed:
+        # Each GPU is on average responsible for
+        # the reconstruction task of a fraction of the samples
+        x_pseudo_list, y_pseudo = get_rank_samples(
+            x_pseudo_list, y_pseudo, args)
+
+    # set gpu
+    x_pseudo_list = x_pseudo_list.cuda(args.gpu)
+    y_pseudo = y_pseudo.cuda(args.gpu)
+    target_gradient = list((grad.cuda(args.gpu) for grad in target_gradient))
+    dm = dm.cuda(args.gpu)
+    ds = ds.cuda(args.gpu)
+
+    # run gradient inversion to reconstruct samples
+    x_recon, cache = reconstruction(
+        x_pseudo_list,
+        y_pseudo,
+        target_gradient,
+        model,
+        dm,
+        ds,
+        args,
+        metric_dict=metric_dict,
+        bn_loss_layers=bn_loss_layers)
+
+    # save results and print metric
+    if not args.superparameters_search:
+        save_results_with_metric(x_recon, y_pseudo, dm, ds, metric_dict, args)
 
 
 if __name__ == '__main__':
