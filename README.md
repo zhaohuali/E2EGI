@@ -15,8 +15,28 @@ A large amount of healthcare data is produced every day as more and more Interne
 pytorch=1.10.1
 torchvision=0.11.2
 apex: https://github.com/NVIDIA/apex
+<<<<<<< HEAD
 
 ```
+=======
+
+```
+
+## Get model gradient
+
+### Single GPU:
+```
+python training.py -a resnet50 [imagenet-folder with train or val folder] -b 8 --gpu 0 --pretrained [mocov2-folder/moco_v2_800ep_pretrain.pth.tar] --results [path to store results]
+```
+
+### Single node, multiple GPUs:
+```
+
+```
+
+
+## Perform E2EGI
+>>>>>>> 33674196137b9fdd38f08506e8f49b8e288a6a06
 
 ## Reproduce our results
 
