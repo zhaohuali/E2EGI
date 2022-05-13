@@ -1,4 +1,4 @@
-# E2EGI
+# E2EGI (updating)
 E2EGI: End-to-End Gradient Inversion in Federated Learning
 (Gradient Leakage in Federated Learning)
 
@@ -11,8 +11,34 @@ A large amount of healthcare data is produced every day as more and more Interne
 
 ## Requirements
 
-## Get model gradient
+```
+pytorch=1.10.1
+torchvision=0.11.2
+apex: https://github.com/NVIDIA/apex
 
-## Perform E2EGI
+```
+
+## Reproduce our results
+
+### Training task with batch size (8)
+
+Run the following code to get the model gradient of the target sample (model: trained ResNet-50 with mocov2, parameters can be downloaded at this  URL [moco](https://github.com/facebookresearch/moco), target sample: imagenet-train, batch size 8)
+```
+python training.py -b 8 --gpu 0 --pretrained [mocov2-folder/moco_v2_800ep_pretrain.pth.tar] --results ./train/checkpoint --data-backup ./train
+```
 
 
+### Training task with batch size (256)
+The difference here is that to obtain the model gradients corresponding to 256 batches of input samples, multiple (8) GPUs are required to run.
+```
+python training.py -b 256 --pretrained [mocov2-folder/moco_v2_800ep_pretrain.pth.tar] --results ./train/checkpoint --data-backup ./train --dist-url tcp://127.0.0.1:10011 --dist-backend nccl --multiprocessing-distributed --world-size 1 --rank 0
+```
+
+
+## Custom
+
+Choice of different models and input samples [model: resnet18, input samples: celebA (idx: 0, batch size: 8)]
+```
+python training.py -a resnet18  -b 8 --gpu 0 --pretrained [file path with resnet18.pth] --data-name celeba --data [celeba-folder] --target-idx 0 --results ./train/checkpoint 
+```
+More options can be seen in the parser description in the file training.py
