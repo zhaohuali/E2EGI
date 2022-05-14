@@ -65,7 +65,6 @@ Obtain the checkpoint by executing the above command, and its path is ./train/ch
 The above 1.1 and 1.3 can both use distributed gradient inversion (multi-GPU execution) to support gradient inversion tasks with larger batch sizes. It is only necessary to remove the gpu setting and add relevant commands after the command: `--world-size 1 --rank 0 --dist-url tcp://127.0.0.1:10034 --dist-backend nccl --multiprocessing-distributed`. For example, applying distributed gradient inversion in MLCO:
 ```
 python run.py --exact-bn --grad-sign --input-boxed --min-grads-loss --epochs 24000 --lr 0.1046 --TV 0.0114 --BN 0.0357 --pseudo-label-init known --metric --one-to-one-similarity --checkpoint ./train/checkpoint/idtest_resnet50_moco_v2_800ep_pretrain.pth.tar_imagenet_b256_i0-checkpoint.pth.tar --MinCombine --n-seed 8 --world-size 1 --rank 0 --dist-url tcp://127.0.0.1:10034 --dist-backend nccl --multiprocessing-distributed
-
 ```
 
 ## Custom

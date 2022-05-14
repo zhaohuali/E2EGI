@@ -1,22 +1,26 @@
 
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.distributed as dist
 
 from prettytable import PrettyTable
 
 
-def get_all_pred_confi(model, x, model_eval=False):
+def get_all_pred_confi(model, x, model_eval):
 
     '''return: confi.shape=[bs, number of classes]'''
     if model_eval:
         model.eval()
     else:
         model.train()
-
     with torch.no_grad():
         out = model(x)
+        print(f'out: {out.shape}')
         confi = F.softmax(out, dim=-1).detach().clone().cpu()
+        print(f'confi: {confi.shape}')
     return confi
 
 
@@ -37,7 +41,7 @@ def get_true_pred_confi(model, x, y, model_eval):
     return y, pred_confi
 
 
-def get_grad(model, x, y, idx=-1, model_eval=False):
+def get_grad(model, x, y, args, idx=-1, model_eval=False):
 
     if model_eval:
         model.eval()
@@ -53,6 +57,7 @@ def get_grad(model, x, y, idx=-1, model_eval=False):
         criterion = nn.CrossEntropyLoss(reduction='mean')
 
     model_loss = criterion(fake_out, y)
+    print(f'model_loss: {model_loss}')
 
     if idx >= 0:
         grads = torch.autograd.grad(model_loss[idx],
@@ -63,7 +68,11 @@ def get_grad(model, x, y, idx=-1, model_eval=False):
                                     model.parameters(),
                                     create_graph=False)
 
-    grads = list([grad.detach().clone().cpu() for grad in grads])
+    grads = list([grad.detach().clone() for grad in grads])
+
+    if args.distributed and idx == -1:
+        average_gradients(grads, args.ngpus_per_node)
+
     return grads
 
 
@@ -94,11 +103,40 @@ def compute_L2_loss(grads1, grads2):
     return L2_diff
 
 
-def get_gir(model, metric_dict, model_eval):
+def get_rank_samples(x_pseudo, y_pseudo, bs):
+
+    num_replicas = dist.get_world_size()
+    rank = dist.get_rank()
+
+    if bs % num_replicas != 0:
+        raise ValueError('number of samples % world_size != 0')
+    else:
+        num_samples = math.ceil(bs / num_replicas)
+
+    start_idx = int(rank * num_samples)
+    end_idx = int((rank + 1) * num_samples)
+
+    rank_x_pseudo = x_pseudo[start_idx: end_idx, :, :, :]
+    rank_y_pseudo = y_pseudo[start_idx: end_idx]
+
+    return rank_x_pseudo, rank_y_pseudo
+
+
+def get_gir(model, metric_dict, args):
 
     '''gradients info rate'''
     x = metric_dict['x_true']
     y = metric_dict['y_true']
+    bs = x.shape[0]
+    gpu = args.gpu
+    model_eval = args.model_eval
+
+    if args.distributed:
+        x, y = get_rank_samples(x, y, bs)
+    x, y = x.to(gpu), y.to(gpu)
+    bs = x.shape[0]
+    print(x.shape)
+    print(y.shape)
 
     column_name = [
         'T:IDX',
@@ -113,16 +151,20 @@ def get_gir(model, metric_dict, model_eval):
         'G info',
         'GIR(%)']
 
-    bs = x.size(0)
-    true_pred, true_pred_confi = get_true_pred_confi(model, x, y, model_eval)
+    true_pred, true_pred_confi = get_true_pred_confi(
+        model, x, y, model_eval)
+    print(f'true_pred_confi: {true_pred_confi}')
     max_pred, max_pred_confi = get_max_pred_confi(model, x, model_eval)
+    print(f'max_pred: {max_pred}')
+    print(f'max_pred_confi: {max_pred_confi}')
 
-    total_grads = get_grad(model, x, y, idx=-1, model_eval=model_eval)
+    total_grads = get_grad(model, x, y, args, idx=-1, model_eval=model_eval)
     total_elem = 0
     for tg in total_grads:
         total_elem += tg.nelement()
 
     total_grads_norm = torch.stack([g.norm() for g in total_grads]).mean()
+    print(f'total_grads_norm: {total_grads_norm}')
 
     info_list = []
     gir_list = []
@@ -136,7 +178,8 @@ def get_gir(model, metric_dict, model_eval):
         gir['Max:Label'] = max_pred[i]
         gir['Max:confi'] = max_pred_confi[i]
 
-        single_grads = get_grad(model, x, y, idx=i, model_eval=model_eval)
+        single_grads = get_grad(
+            model, x, y, args, idx=i, model_eval=model_eval)
 
         info = 0
         for sg, tg in zip(single_grads, total_grads):
@@ -151,28 +194,39 @@ def get_gir(model, metric_dict, model_eval):
 
         gir['G Sim'] = sim_diff
         gir['G Sign Rate(%)'] = int(n_sign * 100 / total_elem)
-        gir['G Sign Rate(%)'] = 0
 
         single_grads_norm = \
             torch.stack([g.norm() for g in single_grads]).mean()
+        print(f'single_grads_norm: {single_grads_norm}')
         gir['G Norm'] = single_grads_norm
 
         gir_list.append(gir)
+        print(gir)
 
     info_list = torch.tensor(info_list)
-    info_sum = info_list.sum()
-    if info_list.min() < 0:
-        info_sum += info_list.min().abs()*bs
+    print(f'a: {info_list}')
+    info_list_min = 0
+    if args.distributed:
+        info_list_gather = gather_distributed(info_list, gpu)
+        info_sum = info_list_gather.sum()
+        if info_list_gather.min() < 0:
+            info_list_min = info_list_gather.min().abs()
+            info_sum += info_list_min * bs
+    else:
+        info_sum = info_list.sum()
+        if info_list.min() < 0:
+            info_list_min = info_list.min().abs()
+            info_sum += info_list_min * bs
+    print(info_sum)
 
     infoR_list = []
     for info in info_list:
-        if info_list.min() < 0:
-            infoR = (info + info_list.min().abs()) / info_sum
-        else:
-            infoR = info / info_sum
-        infoR_list.append(infoR)
+        infoR = (info + info_list_min) / info_sum
+        infoR_list.append(infoR.item())
     for i in range(bs):
         gir_list[i]['GIR(%)'] = infoR_list[i] * 100
+    print(f'infoR_list: {infoR_list}')
+    print(f'infoR sum: {sum(infoR_list)}')
 
     table = PrettyTable(column_name)
     for i in range(bs):
@@ -207,3 +261,34 @@ def get_gir(model, metric_dict, model_eval):
     table.add_row(values)
 
     return table
+
+
+def average_gradients(gradent, ngpus_per_node):
+
+    size = float(ngpus_per_node)
+    for grad in gradent:
+        dist.all_reduce(grad.data, op=dist.ReduceOp.SUM)
+        grad.data /= size
+
+
+def sum_distributed(data, gpu):
+
+    data = torch.as_tensor(data).to(gpu)
+    dist.all_reduce(data.data, op=dist.ReduceOp.SUM)
+    return data
+
+
+def gather_distributed(data, gpu):
+
+    data = torch.as_tensor(data).to(gpu)
+    n_ranks = dist.get_world_size()
+    tensor_list = [
+        torch.zeros(
+            len(data),
+            dtype=data.dtype).to(gpu)
+        for _ in range(n_ranks)]
+    dist.all_gather(tensor_list, data)
+
+    tensor_list = torch.cat(tensor_list, dim=0)
+
+    return tensor_list

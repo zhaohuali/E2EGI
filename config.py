@@ -137,18 +137,20 @@ def load_checkpoint(args):
     args.arch = arch
     args.model_eval = model_eval
 
-    print(f'\n========== Target: {target_clock} ========')
-    for arg in vars(targer_args):
-        msg = f'{arg:30} {getattr(targer_args, arg)}'
-        print(msg)
+    if not args.distributed or args.gpu == 0:
 
-    print(f'\n========== GI: {args.clock} ========')
-    for arg in vars(args):
-        msg = f'{arg:30} {getattr(args, arg)}'
-        print(msg)
-    full_norm = torch.stack([g.norm() for g in target_gradient]).mean()
-    print(f'[Num of grads] {len(target_gradient)}')
-    print(f'[Full gradient norm is] {full_norm:e}.')
+        print(f'\n========== Target: {target_clock} ========')
+        for arg in vars(targer_args):
+            msg = f'{arg:30} {getattr(targer_args, arg)}'
+            print(msg)
+
+        print(f'\n========== GI: {args.clock} ========')
+        for arg in vars(args):
+            msg = f'{arg:30} {getattr(args, arg)}'
+            print(msg)
+        full_norm = torch.stack([g.norm() for g in target_gradient]).mean()
+        print(f'[Num of grads] {len(target_gradient)}')
+        print(f'[Full gradient norm is] {full_norm:e}.')
 
     return model, bn_mean_list, bn_var_list, \
         dm, ds, target_gradient, metric_dict
