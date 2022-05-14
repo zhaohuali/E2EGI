@@ -1,6 +1,11 @@
 
+import os
+
 import torch
+import matplotlib.pyplot as plt
+import torch.distributed as dist
 from torch.distributed import ReduceOp
+import torchvision.transforms as transforms
 
 
 def simple_total_variation(x):
@@ -106,3 +111,74 @@ def compute_label_acc(y_true, y_fake):
         elif y_true_sort[i] < y_fake_sort[j]:
             i += 1
     return n_correct, n_correct / n_true
+
+
+def save_imgs(
+        x, y, dm, ds, distributed,
+        input_size, rank, dir_path, clock, str_=''):
+
+    if distributed:
+
+        world_size = dist.get_world_size()
+        x_list = [torch.empty_like(x) for _ in range(world_size)]
+        y_list = [torch.empty_like(y) for _ in range(world_size)]
+        dist.all_gather(x_list, x)
+        dist.all_gather(y_list, y)
+        x = torch.cat(x_list, dim=0)
+        y = torch.cat(y_list, dim=0)
+        assert x.shape == input_size, x.shape
+
+    if not distributed or rank == 0:
+        n_channels = input_size[1]
+        # save pseudo-samples
+        x = x.detach().clone().cpu()
+        y = y.detach().clone().cpu()
+        imgs = to_img(x, dm, ds)
+        plt_imgs(imgs, y, n_channels, title='F')
+        filename = f'{clock}_{str_}_pseudo.jpg'
+        path = os.path.join(dir_path, filename)
+        plt.savefig(path)
+        plt.close()
+        print(f' > save image: {path}')
+
+
+def to_img(x, dm, ds):
+    '''
+    x.shape = (n_imgs, n_channels, H, W)
+    '''
+    x = x.detach().clone().cpu()
+    ds = ds.cpu()
+    dm = dm.cpu()
+
+    imgs = []
+    for img in x:
+        img = img * ds + dm
+        img = img.clamp(0, 1)
+        imgs.append(img)
+
+    imgs = torch.stack(imgs)
+
+    return imgs
+
+
+def plt_imgs(imgs, y, n_channels, title=''):
+
+    n_imgs = len(imgs)
+
+    tt = transforms.ToPILImage()
+
+    if n_imgs <= 8:
+        plt.figure(figsize=(40, 24))
+    else:
+        plt.figure(figsize=(40, n_imgs))
+
+    i = 0
+    for img in imgs:
+        plt.subplot(n_imgs*2 // 8 + 1, 8, i+1)
+        if n_channels == 1:
+            plt.imshow(tt(img), cmap='gray')
+        else:
+            plt.imshow(tt(img))
+        plt.title(f'{title}:{y[i].item()}', fontsize=30)
+        plt.axis('off')
+        i += 1

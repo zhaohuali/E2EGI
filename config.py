@@ -42,7 +42,7 @@ def update_args(args, HP_config, config_bk):
     args.superparameters_search = False
 
 
-def build_history(args, filename='history/exp'):
+def build_history(args, filename='results/exp'):
 
     if args.superparameters_search:
         history_path = os.getcwd()
@@ -137,21 +137,18 @@ def load_checkpoint(args):
     args.arch = arch
     args.model_eval = model_eval
 
-    if (not args.multiprocessing_distributed
-            or (args.multiprocessing_distributed
-                and args.rank % args.ngpus_per_node == 0)):
-        print(f'\n========== Target: {target_clock} ========')
-        for arg in vars(targer_args):
-            msg = f'{arg:30} {getattr(targer_args, arg)}'
-            print(msg)
+    print(f'\n========== Target: {target_clock} ========')
+    for arg in vars(targer_args):
+        msg = f'{arg:30} {getattr(targer_args, arg)}'
+        print(msg)
 
-        print(f'\n========== GI: {args.clock} ========')
-        for arg in vars(args):
-            msg = f'{arg:30} {getattr(args, arg)}'
-            print(msg)
-        full_norm = torch.stack([g.norm() for g in target_gradient]).mean()
-        print(f'[Num of grads] {len(target_gradient)}')
-        print(f'[Full gradient norm is] {full_norm:e}.')
+    print(f'\n========== GI: {args.clock} ========')
+    for arg in vars(args):
+        msg = f'{arg:30} {getattr(args, arg)}'
+        print(msg)
+    full_norm = torch.stack([g.norm() for g in target_gradient]).mean()
+    print(f'[Num of grads] {len(target_gradient)}')
+    print(f'[Full gradient norm is] {full_norm:e}.')
 
     return model, bn_mean_list, bn_var_list, \
         dm, ds, target_gradient, metric_dict
@@ -201,8 +198,10 @@ def set_BN_regularization(bn_mean_list, bn_var_list, model, args):
     for module in model.modules():
         if isinstance(module, apex.parallel.SyncBatchNorm):
             if bn_mean_list is not None and args.exact_bn:
-                mean = bn_mean_list[i_bn_layers].cuda(args.gpu)
-                var = bn_var_list[i_bn_layers].cuda(args.gpu)
+                mean = \
+                    bn_mean_list[i_bn_layers].detach().clone().cuda(args.gpu)
+                var = \
+                    bn_var_list[i_bn_layers].detach().clone().cuda(args.gpu)
             else:
                 mean = module.running_mean.detach().clone()
                 var = module.running_var.detach().clone()

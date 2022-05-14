@@ -100,7 +100,7 @@ def set_superparameters(args, param_config):
 
 def ray_tune_main(main, args):
 
-    ray_root = os.path.join(args.root, 'history/ray_tune')
+    ray_root = os.path.join(args.root, 'results/ray_tune')
 
     _default_config = {
         'epochs': tune.randint(5000, 20_000),

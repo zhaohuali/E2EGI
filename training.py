@@ -81,7 +81,7 @@ parser.add_argument('--model-eval', action='store_true',
 parser.add_argument('--upload-bn', action='store_true',
                     help='upload BN statistics (input mean and var)')
 
-parser.add_argument('--results', default='', type=str,
+parser.add_argument('--results', default='./train/checkpoint', type=str,
                     help='path to store results')
 
 ''' Configuration of Hardware (GPUs)'''

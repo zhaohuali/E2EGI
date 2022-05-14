@@ -108,7 +108,7 @@ parser.add_argument('--MinCombine', action='store_true',
                          'Combinatorial Optimization')
 
 ''' Configuration of E2EGI '''
-parser.add_argument('--Group', default=0, type=float,
+parser.add_argument('--Group', default=0.01, type=float,
                     help='Weight of group regularization.')
 parser.add_argument('--T-init-rate', default=0.3, type=float,
                     help='Epochs of Initial Reconstruction')
@@ -120,7 +120,7 @@ parser.add_argument('--T-in', default=1000, type=int,
                          'regularization.')
 parser.add_argument('--T-end-rate', default=0.4, type=float,
                     help='Epochs of Final Reconstruction')
-parser.add_argument('--input-noise', default=0, type=float,
+parser.add_argument('--input-noise', default=0.2, type=float,
                     help='The degree to which random noise is introduced into'
                          'the pseudo-input during the update process')
 
@@ -247,9 +247,9 @@ def main_worker(gpu, ngpus_per_node, args):
         dm, ds, target_gradient, metric_dict = load_checkpoint(args)
 
     # GInfoR indicate the gradient leakage risk faced by each sample
-    if args.metric and args.GInfoR:
-        GInfoR = get_gir(model, metric_dict, args.model_eval)
-        print(f'GInfoR: \n{GInfoR}')
+    # if args.metric and args.GInfoR: # TODO: test-in-process
+    #     GInfoR = get_gir(model, metric_dict, args.model_eval)
+    #     print(f'GInfoR: \n{GInfoR}')
 
     model = set_distributed(model, args)
 

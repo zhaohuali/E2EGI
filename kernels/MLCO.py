@@ -37,7 +37,6 @@ class MLCOGradientInversion(BaseGradientInversion):
         rank = 0
         if self.distributed:
             rank = dist.get_rank()
-
         # Initial Reconstruction
         init_lr_start = lr_dict['init_lr_start']
         init_lr_end = lr_dict['init_lr_end']

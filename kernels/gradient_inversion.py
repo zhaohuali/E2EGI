@@ -99,7 +99,7 @@ class BaseGradientInversion():
             for epoch in range(1, epochs+1):
                 closure = self.grads_inversion(x_pseudo, y_pseudo,
                                                optimizer, state)
-                optimizer.step(closure)
+                optimizer.step(closure) 
                 scheduler.step()
 
                 with torch.no_grad():
