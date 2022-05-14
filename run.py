@@ -219,12 +219,6 @@ def main_worker(gpu, ngpus_per_node, args):
     if args.gpu is not None:
         print("Use GPU: {} for training".format(args.gpu))
 
-    # suppress printing if not master
-    if args.multiprocessing_distributed and args.gpu != 0:
-        def print_pass(*args):
-            pass
-        builtins.print = print_pass
-
     if args.distributed:
         if args.dist_url == "env://" and args.rank == -1:
             args.rank = int(os.environ["RANK"])
@@ -246,20 +240,21 @@ def main_worker(gpu, ngpus_per_node, args):
     model, bn_mean_list, bn_var_list, \
         dm, ds, target_gradient, metric_dict = load_checkpoint(args)
 
-    # GInfoR indicate the gradient leakage risk faced by each sample
-    # if args.metric and args.GInfoR: # TODO: test-in-process
-    #     GInfoR = get_gir(model, metric_dict, args.model_eval)
-    #     print(f'GInfoR: \n{GInfoR}')
-
     model = set_distributed(model, args)
 
-    bn_loss_layers = None
-    if args.BN > 0:
-        bn_loss_layers = set_BN_regularization(
-                            bn_mean_list,
-                            bn_var_list,
-                            model,
-                            args)
+    # GInfoR indicate the gradient leakage risk faced by each sample
+    # TODO: test-in-process
+    # if args.metric and args.GInfoR:
+    #     print('1234')
+    #     GInfoR = get_gir(
+    #         model, metric_dict, args)
+    #     print(f'rank[{gpu}] GInfoR: \n{GInfoR}\n')
+
+    # suppress printing if not master
+    if args.multiprocessing_distributed and args.gpu != 0:
+        def print_pass(*args):
+            pass
+        builtins.print = print_pass
 
     # initialize fake-samples
     x_pseudo_list = init_x_pseudo(args)
@@ -276,6 +271,15 @@ def main_worker(gpu, ngpus_per_node, args):
     target_gradient = list((grad.cuda(args.gpu) for grad in target_gradient))
     dm = dm.cuda(args.gpu)
     ds = ds.cuda(args.gpu)
+
+    # track bn loss
+    bn_loss_layers = None
+    if args.BN > 0:
+        bn_loss_layers = set_BN_regularization(
+                            bn_mean_list,
+                            bn_var_list,
+                            model,
+                            args)
 
     # run gradient inversion to reconstruct samples
     x_recon, cache = reconstruction(
