@@ -15,8 +15,11 @@ A large amount of healthcare data is produced every day as more and more Interne
 ## Requirements
 
 ```
+ray=1.9.1
 pytorch=1.10.1
 torchvision=0.11.2
+matplotlib=3.5.0
+prettytable=2.5.0
 apex: https://github.com/NVIDIA/apex
 ```
 
