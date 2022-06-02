@@ -95,7 +95,7 @@ parser.add_argument('--input-norm', default=0, type=float,
                     help='Weight of norm of pseudo-samples (regularization)')
 
 ''' GI component selection '''
-parser.add_argument('--pseudo-label-init', default='from_grads', type=str,
+parser.add_argument('--pseudo-label-init', default='known', type=str,
                     choices=['from_grads', 'known'],
                     help='Way for initializing pseudo labels, from_grads: '
                          'Apply our proposed label reconstruction algorithm; '
@@ -242,14 +242,6 @@ def main_worker(gpu, ngpus_per_node, args):
 
     model = set_distributed(model, args)
 
-    # GInfoR indicate the gradient leakage risk faced by each sample
-    # TODO: test-in-process
-    # if args.metric and args.GInfoR:
-    #     print('1234')
-    #     GInfoR = get_gir(
-    #         model, metric_dict, args)
-    #     print(f'rank[{gpu}] GInfoR: \n{GInfoR}\n')
-
     # suppress printing if not master
     if args.multiprocessing_distributed and args.gpu != 0:
         def print_pass(*args):
@@ -258,7 +250,7 @@ def main_worker(gpu, ngpus_per_node, args):
 
     # initialize fake-samples
     x_pseudo_list = init_x_pseudo(args)
-    y_pseudo = get_y_pseudo(args, metric_dict)
+    y_pseudo = get_y_pseudo(args, target_gradient, metric_dict)
     if args.distributed:
         # Each GPU is on average responsible for
         # the reconstruction task of a fraction of the samples
