@@ -32,13 +32,35 @@ def init_x_pseudo(args):
 
     return x_pseudo_list
 
+def dgi_label_recon(grads, b, N):
 
-def get_y_pseudo(args, metric_dict):
+    '''
+    b: batch size
+    N: n_classes
+    '''
+    g = grads[-2].sum(-1)
+    C = g[torch.where(g > 0)[0]].max()
+    m = N * C / b
+
+    pred_label = []
+    for i, gi in enumerate(g):
+        if gi < 0:
+            pred_label.append(i)
+            g[i] += m
+    while len(pred_label) < b:
+        idx = g.argmin().item()
+        pred_label.append(idx)
+        g[idx] += m
+
+    return torch.as_tensor(pred_label)
+
+def get_y_pseudo(args, target_gradient, metric_dict):
 
     if args.pseudo_label_init == 'known':
         label_pred = metric_dict['y_true']
     elif args.pseudo_label_init == 'from_grads':
-        pass
+        label_pred = dgi_label_recon(target_gradient, args.batch_size, args.n_classes).detach().view(-1,1)
+        print(f'[dgi info] y pred: {label_pred.view(-1,).cpu().numpy()}')
 
     n_correct, acc = compute_label_acc(metric_dict['y_true'], label_pred)
     print(f' > label acc: {acc * 100:.2f}%')
