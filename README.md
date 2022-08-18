@@ -83,3 +83,10 @@ Choice of different models and input samples [model: resnet18, input samples: [c
 python training.py -a resnet18  -b 8 --gpu 0 --pretrained [file path with resnet18.pth] --data-name celeba --data [celeba-folder] --target-idx 0 --outlayer-state kaiming_uniform --results ./train/checkpoint 
 ```
 More options can be seen in the parser description in the file training.py. After the above command is run, the corresponding checkpoint will be obtained, and the gradient inversion algorithm can be executed. See 1.2, 1.3, 1.4, 2.2.
+
+
+## Get model gradients with differential privacy
+Differential privacy is enabled by adding `--enable-dp` to the command line (eg. 2.1 or 3.1 above). Assuming that you need to set the standard deviation of the noise to 0.01, add `--sigma 0.01`; if you want to set the maximum gradient norm to 0.5, then Added `-C 0.5`.
+
+## Get RA-i of model by Rank Analysis
+Rank Analysis is enabled adding `--ra` to the command line (eg. 2.1 or 3.1 above). 
