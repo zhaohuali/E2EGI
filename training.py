@@ -35,9 +35,11 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 import torchvision.models as models
 import torch.backends.cudnn as cudnn
+from config import Logger
 
 from train import get_target_samples, dataset_config, get_mean_std
 from train import kaiming_uniform, save_results, BNForwardFeatureHook
+from RGAP import get_ra_index
 
 
 model_names = sorted(
@@ -83,6 +85,18 @@ parser.add_argument('--upload-bn', action='store_true',
 
 parser.add_argument('--results', default='./train/checkpoint', type=str,
                     help='path to store results')
+
+# differential privacy
+parser.add_argument('--enable-dp', action="store_true",
+                    help="ensable privacy training and dont just train with vanilla SGD")
+parser.add_argument('--sigma', type=float, default=None, help="Noise multiplier")
+parser.add_argument('-C', '--max-per-sample-grad-norm', type=float, default=None, 
+                    help="Clip per-sample gradients to this norm")
+parser.add_argument('--delta', type=float, default=1e-5, help="Target delta")
+
+# Rank Analysis
+parser.add_argument('--ra', action='store_true', 
+                    help='enable rank analysis of R-GAP')
 
 ''' Configuration of Hardware (GPUs)'''
 parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
@@ -246,6 +260,15 @@ def main_worker(gpu, ngpus_per_node, x_true, y_true, args):
         elif 'vgg' in args.arch:
             kaiming_uniform(model.classifier[6])
 
+    if args.ra:
+        if 'resnet' not in args.arch:
+            raise ValueError(f'no support model:{args.arch}, just support resnet')
+        # todo: Rank Rnalysis
+        input_size = (args.batch_size, n_channels, W, H)
+        ra_i = get_ra_index(model, input_size)
+        print(f'[model]{args.arch} [RA-i] {ra_i}')
+        return 
+
     if (not args.multiprocessing_distributed
             or (args.multiprocessing_distributed
                 and args.rank % ngpus_per_node == 0)):
@@ -340,6 +363,7 @@ def main_worker(gpu, ngpus_per_node, x_true, y_true, args):
     # compute gradient and save results
     model.zero_grad()
     loss.backward()
+
     mean_list = None
     var_list = None
     if args.upload_bn:
@@ -350,11 +374,36 @@ def main_worker(gpu, ngpus_per_node, x_true, y_true, args):
             or (args.multiprocessing_distributed
                 and args.rank % ngpus_per_node == 0)):
 
+        if args.enable_dp and args.max_per_sample_grad_norm is not None:
+            # todo: gradient clipping
+            total_norm = torch.nn.utils.clip_grad.clip_grad_norm(
+                model.parameters(), max_norm=args.max_per_sample_grad_norm)
+            print(f'run differential privacy, max_norm={args.max_per_sample_grad_norm}')
+            print(f'orig norm is {total_norm:e}.')
+
         true_grads = list(
             (param.grad.detach().clone()
                 for param in filter(
                 lambda p: p.requires_grad, model.parameters())))
-        full_norm = torch.stack([g.norm() for g in true_grads]).mean()
+
+        # todo: add noise to gradients
+        if args.enable_dp and args.sigma is not None:
+            for i, g in enumerate(true_grads):
+                noise = torch.normal(
+                            mean=0,
+                            std=args.sigma,
+                            size=g.size(),
+                            device=g.device)
+                true_grads[i] += noise
+            print(f'run differential privacy, sigma={args.sigma}')
+            total_norm = torch.norm(torch.stack([torch.norm(
+                (g.detach()), 2).cuda(args.gpu) for g in true_grads]), 2)
+            print(f'new norm is {total_norm:e}.')
+
+        
+        # full_norm = torch.stack([g.norm() for g in true_grads]).mean()
+        full_norm = torch.norm(torch.stack([torch.norm(
+            (g.detach()), 2).cuda(args.gpu) for g in true_grads]), 2)
         print(f'Num of grads: {len(true_grads)}')
         print(f'Full gradient norm is {full_norm:e}.')
 
