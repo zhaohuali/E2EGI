@@ -71,7 +71,7 @@ python training.py -b 256 --pretrained [mocov2-folder/moco_v2_800ep_pretrain.pth
 Obtain the checkpoint by executing the above command, and its path is ./train/checkpoint/idtest_resnet50_moco_v2_800ep_pretrain.pth.tar_imagenet_b256_i0-checkpoint.pth.tar
 
 #### 3.2 Distributed gradient inversion
-The above 1.1 and 1.3 can both use distributed gradient inversion (multi-GPU execution) to support gradient inversion tasks with larger batch sizes. It is only necessary to remove the gpu setting and add relevant commands after the command: `--world-size 1 --rank 0 --dist-url tcp://127.0.0.1:10034 --dist-backend nccl --multiprocessing-distributed`. For example, applying distributed gradient inversion in MLCO:
+The above 2.2 and 2.4 can both use distributed gradient inversion (multi-GPU execution) to support gradient inversion tasks with larger batch sizes. It is only necessary to remove the gpu setting and add relevant commands after the command: `--world-size 1 --rank 0 --dist-url tcp://127.0.0.1:10034 --dist-backend nccl --multiprocessing-distributed`. For example, applying distributed gradient inversion in MLCO:
 ```
 python run.py --exact-bn --grad-sign --input-boxed --min-grads-loss --epochs 24000 --lr 0.1046 --TV 0.0114 --BN 0.0357 --pseudo-label-init known --metric --one-to-one-similarity --checkpoint ./train/checkpoint/idtest_resnet50_moco_v2_800ep_pretrain.pth.tar_imagenet_b256_i0-checkpoint.pth.tar --MinCombine --n-seed 8 --world-size 1 --rank 0 --dist-url tcp://127.0.0.1:10034 --dist-backend nccl --multiprocessing-distributed
 ```
@@ -82,7 +82,7 @@ Choice of different models and input samples [model: resnet18, input samples: [c
 ```
 python training.py -a resnet18  -b 8 --gpu 0 --pretrained [file path with resnet18.pth] --data-name celeba --data [celeba-folder] --target-idx 0 --outlayer-state kaiming_uniform --results ./train/checkpoint 
 ```
-More options can be seen in the parser description in the file training.py. After the above command is run, the corresponding checkpoint will be obtained, and the gradient inversion algorithm can be executed. See 1.2, 1.3, 1.4, 2.2.
+More options can be seen in the parser description in the file training.py. After the above command is run, the corresponding checkpoint will be obtained, and the gradient inversion algorithm can be executed. See 2.2, 2.3, 2.4, 3.2.
 
 
 ## Get model gradients with differential privacy
